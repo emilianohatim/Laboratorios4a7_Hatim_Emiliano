@@ -1,4 +1,4 @@
-# Laboratorios 4, 6 y 7
+# Laboratorios 4, 6, 7, 8 y TFI
 
 -----
 
