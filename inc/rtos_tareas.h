@@ -51,24 +51,42 @@ extern "C" {
 #include "reloj.h"
 #include <string.h>
 
-#define EVENTO_F1_LARGO       (1 << 0)
-#define EVENTO_F2_LARGO       (1 << 1)
-#define EVENTO_F3             (1 << 2)
-#define EVENTO_F4             (1 << 3)
-#define EVENTO_ACEPTAR        (1 << 4)
-#define EVENTO_CANCELAR       (1 << 5)
-#define EVENTO_ALARMA         (1 << 6)
+/**
+ * @brief Definición de bits para los Eventos del sistema gestionados por FreeRTOS
+ *
+ */
+#define EVENTO_F1_LARGO    (1 << 0) /**< Bit 0: Evento de pulsación larga de la tecla F1 */
+#define EVENTO_F2_LARGO    (1 << 1) /**< Bit 1: Evento de pulsación larga de la tecla F2 */
+#define EVENTO_F3          (1 << 2) /**< Bit 2: Evento de pulsación de la tecla F3 */
+#define EVENTO_F4          (1 << 3) /**< Bit 3: Evento de pulsación de la tecla F4 */
+#define EVENTO_ACEPTAR     (1 << 4) /**< Bit 4: Evento de pulsación de la tecla ACEPTAR */
+#define EVENTO_CANCELAR    (1 << 5) /**< Bit 5: Evento de pulsación de la tecla CANCELAR */
+#define EVENTO_ALARMA      (1 << 6) /**< Bit 6: Evento asíncrono disparado cuando el reloj alcanza la hora de alarma */
 
-#define PERIODO_TECLADO_MS    50
-#define TICKS_PULSACION_LARGA (3000 / PERIODO_TECLADO_MS)
+/**
+ * @brief Tiempos de configuración para el filtrado de botones
+ *
+ */
+#define PERIODO_TECLADO_MS 50 /**< Tiempo de refresco y antirrebote para la lectura del teclado en ms */
+#define TICKS_PULSACION_LARGA                                                                                          \
+    (3000 / PERIODO_TECLADO_MS) /**< Cantidad de ciclos equivalentes a 3 segundos de pulsación */
 
 /* === Public data type declarations =============================================================================== */
 
+/**
+ * @brief Estructura de contexto para pasar múltiples instancias a las tareas
+ *
+ * Agrupa punteros de los objetos principales del sistema evitando el uso de varaibles globales
+ *
+ */
 typedef struct {
     board_t placa;
     clock_t reloj;
 } rtos_context_t;
 
+/**
+ * @brief Estados posibles de la Máquina de Estados Finitos del reloj
+ */
 typedef enum {
     RELOJ_SIN_CONFIGURAR,
     MOSTRANDO_HORA,
@@ -81,18 +99,63 @@ typedef enum {
 
 /* === Public variable declarations ================================================================================ */
 
+/**
+ * @brief Manejador global del grupo de eventos para comunicar el teclado y la alarma con la FSM
+ *
+ */
 extern EventGroupHandle_t eventos_teclado;
+
+/**
+ * @brief Semáforo Mutex para proteger el acceso a los datos internos del reloj
+ *
+ */
+extern SemaphoreHandle_t mutex_reloj;
+
+/**
+ * @brief Semáforo Mutex para proteger la escritura de buffers del display
+ *
+ */
+extern SemaphoreHandle_t mutex_display;
 
 /* === Public function declarations ================================================================================ */
 
+/**
+ * @brief Tarea de alta prioridad encargada del barrido multiplexado del display
+ *
+ * @param Parametros Puntero al contexto o a la placa, casteado a (void *)
+ */
 void TareaDisplay(void * Parametros);
 
+/**
+ * @brief Tarea encargada de incrementar la base de tiempo del reloj
+ * Se ejecuta periódicamente cada 1 segundo exacto.
+ *
+ * @param Parametros Puntero a la instancia del reloj, casteado a (void *)
+ */
 void TareaContarTiempo(void * Parametros);
 
+/**
+ * @brief Tarea encargada de leer el estado físico de los pulsadores
+ * Realiza el debouncing y levanta las banderas de eventos
+ *
+ * @param Parametros Puntero al objeto de la placa, casteado a (void *)
+ */
 void TareaTeclado(void * Parametros);
 
+/**
+ * @brief Tarea de la máquina de estados (FSM) principal de la interfaz de usuario
+ * Espera bloqueada a que ocurran eventos del teclado o la alarma para cambiar la lógica visual.
+ *
+ * @param Parametros Puntero al objeto de contexto (rtos_context_t), casteado a (void *)
+ */
 void TareaFSM(void * Parametros);
 
+/**
+ * @brief Función de callback ejecutada por el módulo del reloj
+ * Es llamada automáticamente cuando la hora actual coincide con la hora de alarma seteada.
+ *
+ * @param estado true si la alarma debe activarse, false en caso contrario
+ */
 void ManejadorAlarma(bool estado);
 
 /* === End of conditional blocks =================================================================================== */

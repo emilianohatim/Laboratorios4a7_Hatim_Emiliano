@@ -51,6 +51,13 @@ extern "C" {
 
 /* === Public function declarations ================================================================================ */
 
+/**
+ * @brief Inicializa los recursos de hardware, lógica y tareas del sistema operativo.
+ *
+ * Instancia la placa, reloj, grupos de eventos, semaforos y registros de tareas
+ * en el planificador de FreeRTOS, junto con sus respectivas prioridades y tamaños de pila
+ *
+ */
 void InicializarTareasRTOS(void);
 
 /* === End of conditional blocks =================================================================================== */

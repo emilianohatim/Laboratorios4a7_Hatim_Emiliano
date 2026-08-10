@@ -39,11 +39,131 @@ SPDX-License-Identifier: MIT
 
 /* === Private function declarations =========================================================== */
 
+/**
+ * @brief Incrementa los minutos de la hora en formato BCD.
+ * Maneja internamente el desbordamiento de las unidades (9 a 0) y decenas (5 a 0) de los minutos.
+ *
+ * @param hora Arreglo que contiene la hora a modificar.
+ */
 static void IncrementarMinutos(hora_t hora);
+
+/**
+ * @brief Decrementa los minutos de la hora en formato BCD.
+ * Maneja internamente el paso de 00 a 59 cuando es necesario.
+ *
+ * @param hora Arreglo que contiene la hora a modificar.
+ */
 static void DecrementarMinutos(hora_t hora);
+
+/**
+ * @brief Incrementa las horas en formato BCD.
+ * Limita el valor máximo a 23 y reinicia a 00 cuando ocurre un desbordamiento.
+ *
+ * @param hora Arreglo que contiene la hora a modificar.
+ */
 static void IncrementarHoras(hora_t hora);
+
+/**
+ * @brief Decrementa las horas en formato BCD.
+ * Maneja el paso de 00 a 23 cuando es necesario.
+ *
+ * @param hora Arreglo que contiene la hora a modificar.
+ */
 static void DecrementarHoras(hora_t hora);
+
+/**
+ * @brief Establece el estado de un punto decimal de forma segura.
+ *
+ * @param placa Puntero al descriptor de la placa.
+ * @param digito Índice del dígito cuyo punto se va a modificar (0 a 3).
+ * @param encendido true para encender el punto, false para apagarlo.
+ */
 static void SetPunto(board_t placa, uint8_t digito, bool encendido);
+
+/**
+ * @brief Escribe el BCD en el display de forma segura (Thread-Safe).
+ *
+ * @param placa Puntero al descriptor de la placa.
+ * @param bcd Puntero al arreglo BCD que se desea mostrar.
+ * @param n Cantidad de dígitos a escribir.
+ */
+static void EscribirDisplayBCD(board_t placa, uint8_t * bcd, size_t n);
+
+/**
+ * @brief Configura el parpadeo de digitos de forma segura (Thread-Safe).
+ * Protege la configuración interna del display utilizando el mutex.
+ *
+ * @param placa Puntero al descriptor de la placa.
+ * @param desde Índice del primer dígito a parpadear.
+ * @param hasta Índice del último dígito a parpadear.
+ * @param periodo Periodo de parpadeo (0 para desactivar).
+ */
+static void ParpadearDigitos(board_t placa, uint8_t desde, uint8_t hasta, uint16_t periodo);
+
+/**
+ * @brief Obtiene la hora actual del reloj asegurando exclusión mutua.
+ *
+ * @param reloj Puntero a la instancia del reloj.
+ * @param hora Arreglo donde se guardará la hora leída.
+ * @return true Si la hora es válida y el reloj está configurado.
+ * @return false Si el reloj no ha sido puesto en hora.
+ */
+static bool ClockGetCurrentTimeProtegido(clock_t reloj, hora_t hora);
+
+/**
+ * @brief Configura la hora actual del reloj asegurando exclusión mutua.
+ *
+ * @param reloj Puntero a la instancia del reloj.
+ * @param hora Arreglo con la hora BCD a configurar.
+ */
+static void ClockSetupCurrentTimeProtegido(clock_t reloj, hora_t hora);
+
+/**
+ * @brief Consulta si la alarma está habilitada asegurando exclusión mutua.
+ *
+ * @param reloj Puntero a la instancia del reloj.
+ * @return true Si la alarma está activa.
+ * @return false Si la alarma está inactiva.
+ */
+static bool ClockGetAlarmEnabledProtegido(clock_t reloj);
+
+/**
+ * @brief Conmuta el estado de activación de la alarma asegurando exclusión mutua.
+ *
+ * @param reloj Puntero a la instancia del reloj.
+ */
+static void ClockToggleAlarmProtegido(clock_t reloj);
+
+/**
+ * @brief Obtiene la hora configurada de la alarma asegurando exclusión mutua.
+ *
+ * @param reloj Puntero a la instancia del reloj.
+ * @param hora Arreglo donde se guardará la hora leída de la alarma.
+ */
+static void ClockGetAlarmProtegido(clock_t reloj, hora_t hora);
+
+/**
+ * @brief Configura una nueva hora para la alarma asegurando exclusión mutua.
+ *
+ * @param reloj Puntero a la instancia del reloj.
+ * @param hora Arreglo con la hora BCD a configurar.
+ */
+static void ClockSetupAlarmProtegido(clock_t reloj, hora_t hora);
+
+/**
+ * @brief Pospone la alarma actual (Snooze) asegurando exclusión mutua.
+ *
+ * @param reloj Puntero a la instancia del reloj.
+ * @param minutos Cantidad de minutos a sumar para posponer la alarma.
+ */
+static void ClockPostponeAlarmProtegido(clock_t reloj, uint8_t minutos);
+
+/**
+ * @brief Desactiva la alarma por el resto del día actual asegurando exclusión mutua.
+ *
+ * @param reloj Puntero a la instancia del reloj.
+ */
+static void ClockSkipTodayAlarmProtegido(clock_t reloj);
 
 /* === Private variable definitions ============================================================ */
 
@@ -103,8 +223,85 @@ static void DecrementarHoras(hora_t hora) {
 static void SetPunto(board_t placa, uint8_t digito, bool encendido) {
     static bool estado_puntos_locales[4] = {false, false, false, false};
     if (estado_puntos_locales[digito] != encendido) {
-        DisplayToggleDots(placa->display, digito, digito);
+        if (xSemaphoreTake(mutex_display, portMAX_DELAY) == pdTRUE) {
+            DisplayToggleDots(placa->display, digito, digito);
+            xSemaphoreGive(mutex_display);
+        }
         estado_puntos_locales[digito] = encendido;
+    }
+}
+
+static void EscribirDisplayBCD(board_t placa, uint8_t * bcd, size_t n) {
+    if (xSemaphoreTake(mutex_display, portMAX_DELAY) == pdTRUE) {
+        DisplayWriteBCD(placa->display, bcd, n);
+        xSemaphoreGive(mutex_display);
+    }
+}
+
+static void ParpadearDigitos(board_t placa, uint8_t desde, uint8_t hasta, uint16_t periodo) {
+    if (xSemaphoreTake(mutex_display, portMAX_DELAY) == pdTRUE) {
+        DisplayFlashDigits(placa->display, desde, hasta, periodo);
+        xSemaphoreGive(mutex_display);
+    }
+}
+
+static bool ClockGetCurrentTimeProtegido(clock_t reloj, hora_t hora) {
+    bool resultado = false;
+    if (xSemaphoreTake(mutex_reloj, portMAX_DELAY) == pdTRUE) {
+        resultado = ClockGetCurrentTime(reloj, hora);
+        xSemaphoreGive(mutex_reloj);
+    }
+    return resultado;
+}
+
+static void ClockSetupCurrentTimeProtegido(clock_t reloj, hora_t hora) {
+    if (xSemaphoreTake(mutex_reloj, portMAX_DELAY) == pdTRUE) {
+        ClockSetupCurrentTime(reloj, hora);
+        xSemaphoreGive(mutex_reloj);
+    }
+}
+
+static bool ClockGetAlarmEnabledProtegido(clock_t reloj) {
+    bool resultado = false;
+    if (xSemaphoreTake(mutex_reloj, portMAX_DELAY) == pdTRUE) {
+        resultado = ClockGetAlarmEnabled(reloj);
+        xSemaphoreGive(mutex_reloj);
+    }
+    return resultado;
+}
+
+static void ClockToggleAlarmProtegido(clock_t reloj) {
+    if (xSemaphoreTake(mutex_reloj, portMAX_DELAY) == pdTRUE) {
+        ClockToggleAlarm(reloj);
+        xSemaphoreGive(mutex_reloj);
+    }
+}
+
+static void ClockGetAlarmProtegido(clock_t reloj, hora_t hora) {
+    if (xSemaphoreTake(mutex_reloj, portMAX_DELAY) == pdTRUE) {
+        ClockGetAlarm(reloj, hora);
+        xSemaphoreGive(mutex_reloj);
+    }
+}
+
+static void ClockSetupAlarmProtegido(clock_t reloj, hora_t hora) {
+    if (xSemaphoreTake(mutex_reloj, portMAX_DELAY) == pdTRUE) {
+        ClockSetupAlarm(reloj, hora);
+        xSemaphoreGive(mutex_reloj);
+    }
+}
+
+static void ClockPostponeAlarmProtegido(clock_t reloj, uint8_t minutos) {
+    if (xSemaphoreTake(mutex_reloj, portMAX_DELAY) == pdTRUE) {
+        ClockPostponeAlarm(reloj, minutos);
+        xSemaphoreGive(mutex_reloj);
+    }
+}
+
+static void ClockSkipTodayAlarmProtegido(clock_t reloj) {
+    if (xSemaphoreTake(mutex_reloj, portMAX_DELAY) == pdTRUE) {
+        ClockSkipTodayAlarm(reloj);
+        xSemaphoreGive(mutex_reloj);
     }
 }
 
@@ -117,7 +314,10 @@ void TareaDisplay(void * Parametros) {
     const TickType_t xFrecuencia = pdMS_TO_TICKS(1);
     TickType_t xUltimoDespertar = xTaskGetTickCount();
     while (1) {
-        DisplayRefresh(placa->display);
+        if (xSemaphoreTake(mutex_display, pdMS_TO_TICKS(1)) == pdTRUE) {
+            DisplayRefresh(placa->display);
+            xSemaphoreGive(mutex_display);
+        }
         vTaskDelayUntil(&xUltimoDespertar, xFrecuencia);
     }
 }
@@ -127,7 +327,10 @@ void TareaContarTiempo(void * Parametros) {
     const TickType_t xFrecuencia = pdMS_TO_TICKS(1000);
     TickType_t xUltimoDespertar = xTaskGetTickCount();
     while (1) {
-        ClockNewTick(reloj);
+        if (xSemaphoreTake(mutex_reloj, portMAX_DELAY) == pdTRUE) {
+            ClockNewTick(reloj);
+            xSemaphoreGive(mutex_reloj);
+        }
         vTaskDelayUntil(&xUltimoDespertar, xFrecuencia);
     }
 }
@@ -177,8 +380,8 @@ void ManejadorAlarma(bool estado) {
     }
 }
 
-void TareaFSM(void * pvParameters) {
-    rtos_context_t * contexto = (rtos_context_t *)pvParameters;
+void TareaFSM(void * Parametros) {
+    rtos_context_t * contexto = (rtos_context_t *)Parametros;
     board_t placa = contexto->placa;
     clock_t reloj = contexto->reloj;
 
@@ -193,7 +396,8 @@ void TareaFSM(void * pvParameters) {
 
     TickType_t tiempo_espera = portMAX_DELAY;
 
-    DisplayFlashDigits(placa->display, 0, 3, 250);
+    ParpadearDigitos(placa, 0, 3, 250);
+    EscribirDisplayBCD(placa, display_bcd, sizeof(display_bcd));
     SetPunto(placa, 0, true);
     SetPunto(placa, 1, true);
     SetPunto(placa, 2, true);
@@ -204,12 +408,12 @@ void TareaFSM(void * pvParameters) {
         if (eventos == 0) {
             if (estado_actual == MOSTRANDO_HORA) {
                 hora_t hora_actual;
-                if (ClockGetCurrentTime(reloj, hora_actual)) {
+                if (ClockGetCurrentTimeProtegido(reloj, hora_actual)) {
                     display_bcd[0] = hora_actual[0];
                     display_bcd[1] = hora_actual[1];
                     display_bcd[2] = hora_actual[2];
                     display_bcd[3] = hora_actual[3];
-                    DisplayWriteBCD(placa->display, display_bcd, 4);
+                    EscribirDisplayBCD(placa, display_bcd, sizeof(display_bcd));
 
                     titilar_punto = !titilar_punto;
                     SetPunto(placa, 1, titilar_punto);
@@ -217,24 +421,24 @@ void TareaFSM(void * pvParameters) {
             } else if (estado_actual == ALARMA_SONANDO) {
                 DigitalOutputDeactivate(placa->buzzer);
                 estado_actual = MOSTRANDO_HORA;
-                DisplayFlashDigits(placa->display, 0, 0, 0);
+                ParpadearDigitos(placa, 0, 0, 0);
                 tiempo_espera = TIMEOUT_TICK_1S;
             } else if (estado_actual != RELOJ_SIN_CONFIGURAR) {
                 hora_t hora_actual;
-                if (ClockGetCurrentTime(reloj, hora_actual)) {
+                if (ClockGetCurrentTimeProtegido(reloj, hora_actual)) {
                     estado_actual = MOSTRANDO_HORA;
-                    DisplayFlashDigits(placa->display, 0, 0, 0);
+                    ParpadearDigitos(placa, 0, 0, 0);
                     SetPunto(placa, 0, false);
                     SetPunto(placa, 1, false);
                     SetPunto(placa, 2, false);
-                    if (ClockGetAlarmEnabled(reloj))
+                    if (ClockGetAlarmEnabledProtegido(reloj))
                         SetPunto(placa, 3, true);
                     else
                         SetPunto(placa, 3, false);
                     tiempo_espera = TIMEOUT_TICK_1S;
                 } else {
                     estado_actual = RELOJ_SIN_CONFIGURAR;
-                    DisplayFlashDigits(placa->display, 0, 3, 250);
+                    ParpadearDigitos(placa, 0, 3, 250);
                     SetPunto(placa, 0, true);
                     SetPunto(placa, 1, true);
                     SetPunto(placa, 2, true);
@@ -248,7 +452,7 @@ void TareaFSM(void * pvParameters) {
         if ((eventos & EVENTO_ALARMA) && estado_actual != RELOJ_SIN_CONFIGURAR) {
             estado_actual = ALARMA_SONANDO;
             DigitalOutputActivate(placa->buzzer);
-            DisplayFlashDigits(placa->display, 0, 3, 100);
+            ParpadearDigitos(placa, 0, 3, 100);
             tiempo_espera = TIMEOUT_ALARMA;
             continue;
         }
@@ -259,11 +463,16 @@ void TareaFSM(void * pvParameters) {
             if (eventos & EVENTO_F1_LARGO) {
                 estado_actual = AJUSTANDO_MINUTOS_RELOJ;
                 memset(hora_temporal, 0, sizeof(hora_temporal));
-                DisplayFlashDigits(placa->display, 2, 3, 250);
+                ParpadearDigitos(placa, 2, 3, 250);
                 SetPunto(placa, 0, false);
                 SetPunto(placa, 1, false);
                 SetPunto(placa, 2, false);
                 SetPunto(placa, 3, false);
+                display_bcd[0] = hora_temporal[0];
+                display_bcd[1] = hora_temporal[1];
+                display_bcd[2] = hora_temporal[2];
+                display_bcd[3] = hora_temporal[3];
+                EscribirDisplayBCD(placa, display_bcd, 4);
                 tiempo_espera = TIMEOUT_CONFIG;
             }
             break;
@@ -271,25 +480,35 @@ void TareaFSM(void * pvParameters) {
         case MOSTRANDO_HORA:
             if (eventos & EVENTO_F1_LARGO) {
                 estado_actual = AJUSTANDO_MINUTOS_RELOJ;
-                ClockGetCurrentTime(reloj, hora_temporal);
-                DisplayFlashDigits(placa->display, 2, 3, 250);
+                ClockGetCurrentTimeProtegido(reloj, hora_temporal);
+                ParpadearDigitos(placa, 2, 3, 250);
+                display_bcd[0] = hora_temporal[0];
+                display_bcd[1] = hora_temporal[1];
+                display_bcd[2] = hora_temporal[2];
+                display_bcd[3] = hora_temporal[3];
+                EscribirDisplayBCD(placa, display_bcd, 4);
                 tiempo_espera = TIMEOUT_CONFIG;
             } else if (eventos & EVENTO_F2_LARGO) {
                 estado_actual = AJUSTANDO_MINUTOS_ALARMA;
-                ClockGetAlarm(reloj, hora_temporal);
-                DisplayFlashDigits(placa->display, 2, 3, 250);
+                ClockGetAlarmProtegido(reloj, hora_temporal);
+                ParpadearDigitos(placa, 2, 3, 250);
                 SetPunto(placa, 0, true);
                 SetPunto(placa, 1, true);
                 SetPunto(placa, 2, true);
                 SetPunto(placa, 3, true);
+                display_bcd[0] = hora_temporal[0];
+                display_bcd[1] = hora_temporal[1];
+                display_bcd[2] = hora_temporal[2];
+                display_bcd[3] = hora_temporal[3];
+                EscribirDisplayBCD(placa, display_bcd, 4);
                 tiempo_espera = TIMEOUT_CONFIG;
             } else if (eventos & EVENTO_ACEPTAR) {
-                if (!ClockGetAlarmEnabled(reloj))
-                    ClockToggleAlarm(reloj);
+                if (!ClockGetAlarmEnabledProtegido(reloj))
+                    ClockToggleAlarmProtegido(reloj);
                 SetPunto(placa, 3, true);
             } else if (eventos & EVENTO_CANCELAR) {
-                if (ClockGetAlarmEnabled(reloj))
-                    ClockToggleAlarm(reloj);
+                if (ClockGetAlarmEnabledProtegido(reloj))
+                    ClockToggleAlarmProtegido(reloj);
                 SetPunto(placa, 3, false);
             }
             break;
@@ -302,7 +521,7 @@ void TareaFSM(void * pvParameters) {
                 IncrementarMinutos(hora_temporal);
             if (eventos & EVENTO_ACEPTAR) {
                 estado_actual = AJUSTANDO_HORAS_RELOJ;
-                DisplayFlashDigits(placa->display, 0, 1, 250);
+                ParpadearDigitos(placa, 0, 1, 250);
             } else if (eventos & EVENTO_CANCELAR) {
                 tiempo_espera = 0;
             }
@@ -310,7 +529,7 @@ void TareaFSM(void * pvParameters) {
             display_bcd[1] = hora_temporal[1];
             display_bcd[2] = hora_temporal[2];
             display_bcd[3] = hora_temporal[3];
-            DisplayWriteBCD(placa->display, display_bcd, 4);
+            EscribirDisplayBCD(placa, display_bcd, 4);
             break;
 
         case AJUSTANDO_HORAS_RELOJ:
@@ -320,9 +539,9 @@ void TareaFSM(void * pvParameters) {
             if (eventos & EVENTO_F4)
                 IncrementarHoras(hora_temporal);
             if (eventos & EVENTO_ACEPTAR) {
-                ClockSetupCurrentTime(reloj, hora_temporal);
+                ClockSetupCurrentTimeProtegido(reloj, hora_temporal);
                 estado_actual = MOSTRANDO_HORA;
-                DisplayFlashDigits(placa->display, 0, 0, 0);
+                ParpadearDigitos(placa, 0, 0, 0);
                 tiempo_espera = TIMEOUT_TICK_1S;
             } else if (eventos & EVENTO_CANCELAR) {
                 tiempo_espera = 0;
@@ -331,7 +550,7 @@ void TareaFSM(void * pvParameters) {
             display_bcd[1] = hora_temporal[1];
             display_bcd[2] = hora_temporal[2];
             display_bcd[3] = hora_temporal[3];
-            DisplayWriteBCD(placa->display, display_bcd, 4);
+            EscribirDisplayBCD(placa, display_bcd, 4);
             break;
 
         case AJUSTANDO_MINUTOS_ALARMA:
@@ -342,7 +561,7 @@ void TareaFSM(void * pvParameters) {
                 IncrementarMinutos(hora_temporal);
             if (eventos & EVENTO_ACEPTAR) {
                 estado_actual = AJUSTANDO_HORAS_ALARMA;
-                DisplayFlashDigits(placa->display, 0, 1, 250);
+                ParpadearDigitos(placa, 0, 1, 250);
             } else if (eventos & EVENTO_CANCELAR) {
                 tiempo_espera = 0;
             }
@@ -350,7 +569,7 @@ void TareaFSM(void * pvParameters) {
             display_bcd[1] = hora_temporal[1];
             display_bcd[2] = hora_temporal[2];
             display_bcd[3] = hora_temporal[3];
-            DisplayWriteBCD(placa->display, display_bcd, 4);
+            EscribirDisplayBCD(placa, display_bcd, 4);
             break;
 
         case AJUSTANDO_HORAS_ALARMA:
@@ -360,12 +579,12 @@ void TareaFSM(void * pvParameters) {
             if (eventos & EVENTO_F4)
                 IncrementarHoras(hora_temporal);
             if (eventos & EVENTO_ACEPTAR) {
-                ClockSetupAlarm(reloj, hora_temporal);
-                if (!ClockGetAlarmEnabled(reloj)) {
-                    ClockToggleAlarm(reloj);
+                ClockSetupAlarmProtegido(reloj, hora_temporal);
+                if (!ClockGetAlarmEnabledProtegido(reloj)) {
+                    ClockToggleAlarmProtegido(reloj);
                 }
                 estado_actual = MOSTRANDO_HORA;
-                DisplayFlashDigits(placa->display, 0, 0, 0);
+                ParpadearDigitos(placa, 0, 0, 0);
                 SetPunto(placa, 0, false);
                 SetPunto(placa, 1, false);
                 SetPunto(placa, 2, false);
@@ -378,21 +597,21 @@ void TareaFSM(void * pvParameters) {
             display_bcd[1] = hora_temporal[1];
             display_bcd[2] = hora_temporal[2];
             display_bcd[3] = hora_temporal[3];
-            DisplayWriteBCD(placa->display, display_bcd, 4);
+            EscribirDisplayBCD(placa, display_bcd, 4);
             break;
 
         case ALARMA_SONANDO:
             if (eventos & EVENTO_ACEPTAR) {
-                ClockPostponeAlarm(reloj, 5);
+                ClockPostponeAlarmProtegido(reloj, 5);
                 DigitalOutputDeactivate(placa->buzzer);
                 estado_actual = MOSTRANDO_HORA;
-                DisplayFlashDigits(placa->display, 0, 0, 0);
+                ParpadearDigitos(placa, 0, 0, 0);
                 tiempo_espera = TIMEOUT_TICK_1S;
             } else if (eventos & EVENTO_CANCELAR) {
-                ClockSkipTodayAlarm(reloj);
+                ClockSkipTodayAlarmProtegido(reloj);
                 DigitalOutputDeactivate(placa->buzzer);
                 estado_actual = MOSTRANDO_HORA;
-                DisplayFlashDigits(placa->display, 0, 0, 0);
+                ParpadearDigitos(placa, 0, 0, 0);
                 tiempo_espera = TIMEOUT_TICK_1S;
             }
             break;

@@ -45,6 +45,8 @@ static rtos_context_t contexto_reloj;
 /* === Public variable definition  ============================================================= */
 
 EventGroupHandle_t eventos_teclado;
+SemaphoreHandle_t mutex_reloj;
+SemaphoreHandle_t mutex_display;
 
 /* === Private function definitions ============================================================ */
 
@@ -56,6 +58,9 @@ void InicializarTareasRTOS(void) {
     contexto_reloj.placa = BoardCreate();
     contexto_reloj.reloj = ClockCreate(1, ManejadorAlarma);
     eventos_teclado = xEventGroupCreate();
+    mutex_reloj = xSemaphoreCreateMutex();
+    mutex_display = xSemaphoreCreateMutex();
+
     xTaskCreate(TareaDisplay, "Display", configMINIMAL_STACK_SIZE, (void *)contexto_reloj.placa,
                 (configMAX_PRIORITIES - 1), NULL);
     xTaskCreate(TareaContarTiempo, "Reloj", configMINIMAL_STACK_SIZE, (void *)contexto_reloj.reloj,
