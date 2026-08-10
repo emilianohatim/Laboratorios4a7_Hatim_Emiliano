@@ -26,44 +26,44 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 SPDX-License-Identifier: MIT
 *************************************************************************************************/
 
-/** \brief EDU-CIAA-NXP board sample application
- **
- ** \addtogroup samples Samples
- ** \brief Samples applications with MUJU Framwork
- ** @{ */
+/** @file inicializar_tareas.c
+ ** @brief Implementación de la inicialización de las tareas
+ */
+/* === Headers files inclusions ================================================================ */
 
-/* === Headers files inclusions =============================================================== */
-
-#ifndef EDU_CIAA_NXP
-#error "This program can only be compiled for the EDU-CIAA-NXP board"
-#endif
-
-#include "FreeRTOS.h"
-#include "inicializar_tareas.h"
 #include "rtos_tareas.h"
+#include "inicializar_tareas.h"
 
 /* === Macros definitions ====================================================================== */
 
 /* === Private data type declarations ========================================================== */
 
-/* === Private variable declarations =========================================================== */
+/* === Private function definitions ============================================================ */
 
-/* === Private function declarations =========================================================== */
+static rtos_context_t contexto_reloj;
 
-/* === Public variable definitions ============================================================= */
+/* === Public variable definition  ============================================================= */
 
-/* === Private variable definitions ============================================================ */
+EventGroupHandle_t eventos_teclado;
 
-/* === Private function implementation ========================================================= */
+/* === Private function definitions ============================================================ */
+
+/* === Public function definitions ============================================================ */
 
 /* === Public function implementation ========================================================== */
 
-int main(void) {
-    InicializarTareasRTOS();
-    vTaskStartScheduler();
-    while (1) {
-    }
-    return 0;
+void InicializarTareasRTOS(void) {
+    contexto_reloj.placa = BoardCreate();
+    contexto_reloj.reloj = ClockCreate(1, ManejadorAlarma);
+    eventos_teclado = xEventGroupCreate();
+    xTaskCreate(TareaDisplay, "Display", configMINIMAL_STACK_SIZE, (void *)contexto_reloj.placa,
+                (configMAX_PRIORITIES - 1), NULL);
+    xTaskCreate(TareaContarTiempo, "Reloj", configMINIMAL_STACK_SIZE, (void *)contexto_reloj.reloj,
+                (configMAX_PRIORITIES - 2), NULL);
+    xTaskCreate(TareaTeclado, "Teclado", configMINIMAL_STACK_SIZE, (void *)contexto_reloj.placa,
+                (configMAX_PRIORITIES - 3), NULL);
+    xTaskCreate(TareaFSM, "FSM", configMINIMAL_STACK_SIZE * 2, (void *)&contexto_reloj, (configMAX_PRIORITIES - 4),
+                NULL);
 }
 
 /* === End of documentation ==================================================================== */

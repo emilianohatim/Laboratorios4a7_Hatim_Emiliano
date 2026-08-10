@@ -1,4 +1,4 @@
-MODULES = Hal
+MODULES = Hal $(MUJU)/module/freertos
 BOARD ?= edu-ciaa-nxp
 VERBOSE=n
 MUJU ?= muju

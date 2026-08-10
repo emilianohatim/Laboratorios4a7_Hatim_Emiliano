@@ -32,6 +32,7 @@ SPDX-License-Identifier: MIT
 /* === Headers files inclusions ================================================================ */
 
 #include "bsp.h"
+#include "board.h"
 #include "chip.h"
 
 /* === Macros definitions ====================================================================== */
@@ -333,12 +334,11 @@ board_t BoardCreate(void) {
         .UpdateDigits = UpdateDigits,
         .UpdateSegments = UpdateSegments,
     };
-    // BoardSetup();
+    BoardSetup();
     DigitsInit();
     SegmentsInit();
     BuzzerInit();
     KeysInit();
-
     board.display = DisplayCreate(4, &display_driver);
     return &board;
 }
@@ -346,6 +346,7 @@ board_t BoardCreate(void) {
 void BoardSysTickInit(uint32_t tick_rate_hz) {
     SystemCoreClockUpdate();
     SysTick_Config(SystemCoreClock / tick_rate_hz);
+    NVIC_SetPriority(SysTick_IRQn, (1 << __NVIC_PRIO_BITS) - 1);
 }
 
 /* === End of documentation ==================================================================== */

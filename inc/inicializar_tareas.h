@@ -26,44 +26,37 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 SPDX-License-Identifier: MIT
 *************************************************************************************************/
 
-/** \brief EDU-CIAA-NXP board sample application
- **
- ** \addtogroup samples Samples
- ** \brief Samples applications with MUJU Framwork
- ** @{ */
+#ifndef INICIALIZADOR_TAREAS_H_
+#define INICIALIZADOR_TAREAS_H_
 
-/* === Headers files inclusions =============================================================== */
+/** @file inicializar_tareas.h
+ ** @brief Declaración de la inicialización de las tareas
+ **/
 
-#ifndef EDU_CIAA_NXP
-#error "This program can only be compiled for the EDU-CIAA-NXP board"
+/* === Headers files inclusions ==================================================================================== */
+
+#include "FreeRTOSConfig.h"
+
+/* === Header for C++ compatibility ================================================================================ */
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
-#include "FreeRTOS.h"
-#include "inicializar_tareas.h"
-#include "rtos_tareas.h"
+/* === Public macros definitions =================================================================================== */
 
-/* === Macros definitions ====================================================================== */
+/* === Public data type declarations =============================================================================== */
 
-/* === Private data type declarations ========================================================== */
+/* === Public variable declarations ================================================================================ */
 
-/* === Private variable declarations =========================================================== */
+/* === Public function declarations ================================================================================ */
 
-/* === Private function declarations =========================================================== */
+void InicializarTareasRTOS(void);
 
-/* === Public variable definitions ============================================================= */
+/* === End of conditional blocks =================================================================================== */
 
-/* === Private variable definitions ============================================================ */
-
-/* === Private function implementation ========================================================= */
-
-/* === Public function implementation ========================================================== */
-
-int main(void) {
-    InicializarTareasRTOS();
-    vTaskStartScheduler();
-    while (1) {
-    }
-    return 0;
+#ifdef __cplusplus
 }
+#endif
 
-/* === End of documentation ==================================================================== */
+#endif /* INICIALIZADOR_TAREAS_H_ */
